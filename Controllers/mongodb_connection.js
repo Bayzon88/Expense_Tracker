@@ -1,8 +1,17 @@
 const bodyParser = require("body-parser");
+
+//************* Mongoose Imports
+const mongoose = require("mongoose");
+const { Schema } = mongoose;
+const { expenseSchema, userSchema, groupSchema } = require("../Functions/mongoose_schema");
+
 const { MongoClient, ServerApiVersion } = require("mongodb");
+
+//***************** Helper Functions
 const {
   usernameRegisteredInDatabase,
-  createConnectionToCollection,
+  verifyIfUserExists,
+  getTotalUserCount,
 } = require("../Functions/mongodb_helperFunctions");
 const register = require("../Model/register");
 
@@ -18,29 +27,74 @@ const client = new MongoClient(uri, {
   },
 });
 
-function getMongoData(app) {
-  app.get("/getmongo", async (req, res) => {
+//************************************ GET ALL EXPENSES BY USERNAME ************************************/
+/**
+ * Retrieve all expenses from a espcific username
+ * @param {Express} app
+ * @returns JSON
+ */
+async function getAllUserExpenses(app) {
+  //TODO: Handle if user is authenticated
+  //TODO: Handle username is null
+  //TODO: Handle filters (e.g. month, year, category, etc)
+  app.get("/api/:username", async (req, res) => {
+    const username = req.params.username; //
     try {
-      // Connect the client to the server	(optional starting in v4.7)
-      await client.connect();
-      // Send a ping to confirm a successful connection
-      await client.db("admin").command({ ping: 1 });
+      //Create Connection to database and specify Schema
+      await mongoose.connect(process.env.MONGO_URI);
+      const Expenses = mongoose.model("expenses", expenseSchema);
 
-      const db = client.db("expensetracker"); //Select database to access
-      const coll = db.collection("expenses"); //Select Collection (table)
+      //Query all expenses for username and close connection
+      const userExpenses = await Expenses.findOne({ username: username });
+      mongoose.connection.close();
 
-      //Query data from database
-      const query = { category: { $ne: "" } };
-      const data = await coll.find(query);
-      console.log(data);
-      res.status(200);
-      res.end(); //closes the initial request
+      res.status(200).send(userExpenses).end(); //finish the connection
     } catch (err) {
+      console.log("There is an error");
       console.error(err);
-      res.status(500).json({ error: "there is an error" });
+    }
+  });
+}
+
+/**************************************************************************************************
+ *                                              POST REQUESTS                                     *
+ *************************************************************************************************/
+
+//************************************ CREATE NEW USER IN DB ************************************/
+/**
+ * Retrieve all expenses from a espcific username
+ * @param {Express} app
+ */
+function createNewUser(app) {
+  app.post("/api/register", async (req, res) => {
+    let userCount = await getTotalUserCount();
+
+    let userInfo = { ...req.body, user_id: userCount + 1 };
+
+    //TODO: Add user_id to the body based on count from totalusers
+
+    try {
+      //Connect to MongoDB and select collection
+      await mongoose.connect(process.env.MONGO_URI);
+      const Users = mongoose.model("users", userSchema);
+      //Insert document in database
+      const newUser = new Users(userInfo); //Create new user Document(datapoint)
+
+      //Validate Schema and save into database
+      const validationError = await newUser.validate().catch((err) => err);
+      const userExists = await verifyIfUserExists(userInfo.username);
+      if (!validationError && userExists == false) {
+        await newUser.save(); //Save into database
+        res.status(200);
+      } else {
+        console.log("Schema Validation Failed or user Exists!");
+      }
+    } catch (err) {
+      console.log("There is an error");
+      console.error(err);
+      res.status(500).end();
     } finally {
-      // Ensures that the client will close when you finish/error
-      await client.close();
+      res.end();
     }
   });
 }
@@ -55,81 +109,7 @@ function createNewExpense(app) {
   });
 }
 
-//************************************ CREATE NEW USER IN DB ************************************/
-function createNewUser(app) {
-  app.post("/api/register", async (req, res) => {
-    //Returns an JSON object containng the user information
-    let registerObject = register.registerModel(req); //{username: "", password: "", email: ""}
-
-    try {
-      // Connect the client to the server	(optional starting in v4.7)
-      await client.connect();
-      await client.db("admin").command({ ping: 1 }); // Send a ping to confirm a successful connection
-      const db = client.db("expensetracker"); //Select database to access
-      const coll = db.collection("users"); //Select Collection (table)
-
-      //Add new user if it doesnt exists in database
-      /**
-       * @param username JSON, MongoClient
-       */
-      if (await !usernameRegisteredInDatabase(registerObject.username, client)) {
-        const data = await coll.insertOne(query);
-        if (data.acknowledged) {
-          console.log("Success!!");
-          res.status(200);
-          await client.close();
-        } else {
-          console.log("Could Not add to database");
-        }
-      } else {
-        console.log("User already exists!");
-        await client.close();
-      }
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "there is an error" });
-    } finally {
-      // Ensures that the client will close when you finish/error
-      await client.close();
-    }
-
-    res.end();
-  });
-}
-
-//************************************ GET ALL EXPENSES BY USERNAME ************************************/
-/**
- * Retrieve all expenses from a espcific username
- * @param {Express} app
- * @returns JSON
- */
-async function getAllUserExpenses(app) {
-  //TODO: Handle if user is authenticated
-  //TODO: Handle username is null
-  //TODO: Handle filters (e.g. month, year, category, etc)
-  app.get("/api/:username", async (req, res) => {
-    try {
-      //creates the connection to the database and returns a collection object
-      await client.connect();
-      const coll = await createConnectionToCollection(client, "expensetracker", "expenses");
-
-      //Query to MongoDB
-      const query = req.params;
-      const options = { sort: { category: 1 } };
-      const data = coll.find(query, options);
-      const expenses = await data.toArray();
-      await client.close(); //close mongoDB client
-
-      res.status(200).send(expenses).end(); //send data an close API request
-    } catch (err) {
-      console.log("getAllUserExpenses Error");
-      console.log(err);
-    }
-  });
-}
-
 module.exports = {
-  getMongoData: getMongoData,
   createNewExpense: createNewExpense,
   createNewUser: createNewUser,
   getAllUserExpenses: getAllUserExpenses,

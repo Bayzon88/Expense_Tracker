@@ -1,6 +1,8 @@
+const mongoose = require("mongoose");
 //************************************ GET USERS FROM DB ************************************/
 
 const { Collection, MongoClient } = require("mongodb");
+const { userSchema } = require("./mongoose_schema");
 
 /** 
 Check if username exists in database, returns true or false
@@ -22,22 +24,29 @@ async function usernameRegisteredInDatabase(username, client) {
   }
 }
 
+//************************************ VERIFY IF USER EXISTS ************************************/
 /**
- *@param {MongoClient} client
- * @param {String} database
- * @param {String} collection
- * @returns {Collection}
+ *@param {String} username
  */
-async function createConnectionToCollection(client, database, collection) {
-  // Connect the client to the server	(optional starting in v4.7)
+async function verifyIfUserExists(username) {
+  await mongoose.connect(process.env.MONGO_URI);
+  const Users = mongoose.model("users");
 
-  await client.db("admin").command({ ping: 1 }); // Send a ping to confirm a successful connection
-  const db = client.db(database); //Select database to access
-  const coll = db.collection(collection); //Select Collection (table)
-  return coll;
+  const userExists = await Users.find({ username: username });
+  console.log(userExists.length);
+  return userExists.length > 0;
+}
+
+//************************************ GET TOTAL USER COUNT  ************************************/
+
+async function getTotalUserCount() {
+  await mongoose.connect(process.env.MONGO_URI);
+  const Users = mongoose.model("users", userSchema);
+  return await Users.countDocuments();
 }
 
 module.exports = {
   usernameRegisteredInDatabase: usernameRegisteredInDatabase,
-  createConnectionToCollection: createConnectionToCollection,
+  verifyIfUserExists: verifyIfUserExists,
+  getTotalUserCount: getTotalUserCount,
 };
